@@ -1,0 +1,52 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build
+        run: dotnet build Treacky.Tols.sln -c Release --nologo
+
+      - name: Service harness (read-only)
+        run: dotnet run --project tests/Treacky.Tols.Tests -c Release --no-build
+
+      - name: Package (unsigned)
+        shell: pwsh
+        run: ./scripts/Build-SingleFile.ps1 -SkipTests
+
+      - name: Verify executable
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Get-ChildItem dist -Filter 'Treacky.Tols-*-win-x64.exe' | Select-Object -First 1
+          if (-not $exe) { throw 'Single-file executable not found.' }
+          $hash = (Get-FileHash -LiteralPath $exe.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $sidecar = Get-Content -LiteralPath ($exe.FullName + '.sha256') -Raw
+          if (-not $sidecar.StartsWith($hash)) { throw 'SHA-256 sidecar does not match the executable.' }
+          Write-Host ("{0}  {1} bytes  {2}" -f $exe.Name, $exe.Length, $hash)
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Treacky.Tols-unsigned
+          if-no-files-found: error
+          path: |
+            dist/*.exe
+            dist/*.exe.sha256

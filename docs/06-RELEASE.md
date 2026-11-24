@@ -1,0 +1,242 @@
+# 06 · Release
+
+The published release is a single self-contained Windows x64 executable,
+`Treacky.Tols-<version>-win-x64.exe`. A folder + ZIP build remains available for
+local review.
+The version lives in `src/Treacky.Tols/Treacky.Tols.csproj`:
+
+```xml
+<Version>0.1.3</Version>
+<AssemblyVersion>0.1.3.0</AssemblyVersion>
+<FileVersion>0.1.3.0</FileVersion>
+```
+
+`Build-Release.ps1` accepts `-Version` and overrides all three. A three-part
+version is expanded to four parts for the file/assembly attributes. Use semantic
+versioning and tag releases `v<version>`.
+
+## Single-file release
+
+```powershell
+.\scripts\Build-SingleFile.ps1 -Version 0.1.3
+```
+
+Output under `dist\`:
+
+```text
+dist\
+├─ Treacky.Tols-0.1.3-win-x64.exe
+└─ Treacky.Tols-0.1.3-win-x64.exe.sha256
+```
+
+The executable is self-contained: no .NET Desktop Runtime install and no loose
+`UncapEngine.dll`, `branding.json`, or avatar. The payload is embedded in the
+assembly and extracted to `%APPDATA%\Treacky.Tols\payload\<version>` before
+injection. The script builds the solution, runs the harness, publishes with
+`PublishSingleFile`, optionally signs, copies the exe to `dist\`, and writes the
+SHA-256 sidecar. This is the artifact the release workflow uploads.
+
+## Folder build (local review)
+
+```powershell
+.\scripts\Build-Release.ps1 -Version 0.1.3
+```
+
+Output under `dist\`:
+
+```text
+dist\
+├─ Treacky.Tols-0.1.3-win-x64\
+│  ├─ Treacky.Tols.exe
+│  ├─ Treacky.Tols.dll
+│  ├─ Treacky.Tols.deps.json
+│  ├─ Treacky.Tols.runtimeconfig.json
+│  ├─ Treacky.Tols.pdb
+│  ├─ branding.json
+│  ├─ README.md, LICENSE, CHANGELOG.md, SECURITY.md, CONTRIBUTING.md
+│  ├─ docs\*.md
+│  ├─ screenshots\*.png
+│  ├─ scripts\Verify-Release.ps1, New-Checksums.ps1
+│  └─ SHA256SUMS.txt
+├─ Treacky.Tols-0.1.3-win-x64.zip
+└─ Treacky.Tols-0.1.3-win-x64.zip.sha256
+```
+
+The command:
+
+1. Resolves a dotnet host that actually has an SDK.
+2. Builds the solution in Release and runs the read-only harness.
+3. Publishes framework-dependent by default (`-SelfContained` to change).
+4. Copies docs, screenshots, license, and verification scripts into the package.
+5. Signs the executable if credentials are supplied.
+6. Writes `SHA256SUMS.txt` over the final, post-signing files.
+7. Archives the folder and writes a separate SHA-256 for the ZIP.
+
+`-SkipTests` skips step 2 when CI already ran the harness. Do not use it for a
+local release candidate.
+
+## Signing
+
+### Prerequisites
+
+- A code-signing certificate issued by a public CA (DigiCert, Sectigo, SSL.com,
+  GlobalSign, etc.). OV or EV both work; EV usually requires a hardware token.
+- `signtool.exe` from the Windows SDK.
+- A timestamp service. The script defaults to
+  `http://timestamp.digicert.com`.
+
+This repository does **not** include a certificate. A self-signed certificate is
+not a release signature and is not supported by the scripts.
+
+### PFX file
+
+```powershell
+.\scripts\Build-SingleFile.ps1 -Version 0.1.3 `
+  -Sign -Pfx .\secrets\codesign.pfx `
+  -PfxPassword (Read-Host -AsSecureString)
+```
+
+The PFX path and password are never written to the repository. Keep `secrets/`
+ignored and backed up securely. The password is passed to `signtool` on the
+command line; run the build on a trusted machine and avoid shared shells.
+
+### Certificate store / hardware token
+
+```powershell
+# Find the thumbprint
+Get-ChildItem Cert:\CurrentUser\My |
+  Where-Object { $_.EnhancedKeyUsageList.ObjectId -contains '1.3.6.1.5.5.7.3.3' } |
+  Format-List Subject, Thumbprint, NotAfter
+
+.\scripts\Build-SingleFile.ps1 -Version 0.1.3 `
+  -Sign -Thumbprint <SHA1-THUMBPRINT>
+```
+
+For a token, unlock it when `signtool` prompts. EV tokens may require a
+manufacturer middleware driver.
+
+### Sign only (existing build)
+
+```powershell
+.\scripts\Sign-Release.ps1 -Path .\dist\Treacky.Tols-0.1.3-win-x64.exe `
+  -Pfx .\secrets\codesign.pfx -PfxPassword (Read-Host -AsSecureString)
+
+# Re-hash after signing; signatures change the file bytes.
+$hash = (Get-FileHash .\dist\Treacky.Tols-0.1.3-win-x64.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+"$hash  Treacky.Tols-0.1.3-win-x64.exe" |
+  Set-Content .\dist\Treacky.Tols-0.1.3-win-x64.exe.sha256 -Encoding ascii
+```
+
+If you sign after packaging, rebuild the sidecar. Always sign **before** the
+final checksum.
+
+### Timestamping
+
+Every signature uses RFC 3161 SHA-256 timestamping:
+
+```text
+/tr http://timestamp.digicert.com /td SHA256
+```
+
+A timestamp keeps the signature valid after the certificate expires. If the
+timestamp service is unavailable, the script fails rather than producing an
+untimestamped release.
+
+## Verification
+
+```powershell
+# Published single-file executable
+Get-FileHash .\dist\Treacky.Tols-0.1.3-win-x64.exe -Algorithm SHA256
+Get-Content .\dist\Treacky.Tols-0.1.3-win-x64.exe.sha256
+
+# Native check
+Get-AuthenticodeSignature .\dist\Treacky.Tols-0.1.3-win-x64.exe |
+  Format-List Status, StatusMessage, SignerCertificate
+
+# Folder build (local review)
+.\scripts\Verify-Release.ps1 `
+  -Path .\dist\Treacky.Tols-0.1.3-win-x64 `
+  -Sums .\dist\Treacky.Tols-0.1.3-win-x64\SHA256SUMS.txt
+```
+
+Unsigned builds report `NotSigned`. Release notes must say **unsigned** in that
+case. Never publish a SHA-256 that was generated before signing, and never paste
+a hash into prose as the only source of truth — the manifest is authoritative.
+
+## GitHub release
+
+1. Update `CHANGELOG.md` and write `docs/RELEASE-NOTES-<version>.md`.
+2. Commit, tag, and push:
+
+   ```powershell
+   git tag v0.1.3
+   git push origin v0.1.3
+   ```
+
+3. The `release` workflow builds the tagged commit and creates a **draft**
+   GitHub release. It requires `docs/RELEASE-NOTES-<version>.md` and fails
+   before building when the notes are missing. If `CERT_PFX_BASE64` and
+   `CERT_PASSWORD` repository secrets exist, it decodes the PFX into the runner
+   temp directory, signs, verifies, and hashes. If they do not exist, it builds
+   an explicitly unsigned release.
+4. The draft body is the versioned notes file with the executable's SHA-256
+   appended, and one asset is attached:
+
+   - `Treacky.Tols-<version>-win-x64.exe`
+
+5. Review the draft: download the exe, compare its SHA-256 with the value in the
+   body, check the signature status in the workflow log, and confirm the notes.
+   Publish the draft manually.
+6. State the signature status and signer subject in the release body.
+
+Tag pushes never publish a public release directly. The draft is the hand-off
+point, so CI cannot replace hand-verified assets, overwrite custom notes, or
+publish an unreviewed binary. `overwrite_files: false` makes an asset-name
+collision fail instead of silently replacing a file; delete the draft and rerun
+if a rebuild is required.
+
+### Repository secrets for signed CI
+
+| Secret | Contents |
+|---|---|
+| `CERT_PFX_BASE64` | Base64 of the PFX file |
+| `CERT_PASSWORD` | PFX password |
+
+Generate the base64 locally:
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes('.\secrets\codesign.pfx')) |
+  Set-Clipboard
+```
+
+Remove the PFX from the runner after the build. The workflow does this in a
+`finally`-style step and never uploads the certificate.
+
+## Release checklist
+
+- [ ] Version bumped in csproj, changelog, and release notes.
+- [ ] `dotnet build -c Release` clean.
+- [ ] Safe harness: 23/23 pass.
+- [ ] `--system` harness: 26/26 pass on a controlled machine.
+- [ ] Launch boosted verified against a closed emulator; priority retained and
+      the running action remains blocked and reported.
+- [ ] All six captures reviewed; log shows the matching `selected='<key>'`.
+- [ ] No new NuGet dependencies; `dotnet list package` shows none.
+- [ ] No secrets, PFX files, certificates, logs, or machine paths in the diff.
+- [ ] `Build-SingleFile.ps1` produces the exe and its SHA-256 sidecar.
+- [ ] The executable starts and extracts the embedded payload.
+- [ ] Signature status and signer recorded in the release notes.
+- [ ] SHA-256 values match the published executable.
+- [ ] Tag pushed; GitHub release has one asset: the exe.
+
+## Rollback
+
+If a release is bad:
+
+1. Mark the GitHub release as a pre-release or delete it.
+2. Publish a fixed patch version; do not reuse the version or tag.
+3. Keep the old manifest for audit, but make the new release's notes explicit
+   about the superseded build.
+4. If a signed binary was distributed and the key is compromised, revoke the
+   certificate through the CA and publish an advisory. A new signature cannot
+   make an old compromised binary trustworthy.

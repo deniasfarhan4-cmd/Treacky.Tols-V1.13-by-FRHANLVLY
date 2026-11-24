@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>Treacky.Tols.Tests</RootNamespace>
+    <AssemblyName>Treacky.Tols.Tests</AssemblyName>
+    <Version>0.1.3</Version>
+    <Company>FLY.PROJECT-X</Company>
+    <Product>Treacky.Tols test harness</Product>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Treacky.Tols\Treacky.Tols.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\..\native\UncapEngine_SDK\payload\UncapEngine.dll" Link="UncapEngine.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\native\UncapEngine_SDK\payload\UncapEngine.ini" Link="UncapEngine.ini">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

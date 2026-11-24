@@ -1,0 +1,294 @@
+# Treacky.Tols
+
+**A local-first Windows performance console for Android emulators.**  
+Black chrome, measured claims, reversible changes.
+
+![Treacky.Tols overview](screenshots/overview.png)
+
+Treacky.Tols is an independent, clean-room implementation of emulator optimization
+techniques: emulator discovery, process priority, Windows timer
+resolution, Ultimate Performance power schemes, GameDVR/FSE registry behavior,
+QML cache hygiene, BlueStacks driver inspection, visual preset compilation, and
+diagnostics. The interface is original. No code, assets, license logic, or
+anti-analysis routines from the source binary are reused.
+
+---
+
+> **PUBLIC-USE WARNING:** Treacky.Tols is an advanced emulator-administration tool. The emulator-specific **Boost priority** action requires elevation and can load a native DLL into a running emulator, patch renderer/presentation hooks, change frame-pace/v-sync behavior, modify an emulator FPS writer, and alter Windows power, timer, priority, and registry settings. Use it only on systems and emulator installations you own or administer, test on a controlled machine first, and comply with the emulator's terms and applicable law. **Restore normal** attempts to remove the payload hooks and restore emulator instructions, but it does not guarantee emulator or system recovery from crashes or incompatibility.
+
+---
+
+## What it does
+
+### Overview
+A live system pulse sampled at 2 Hz (60-second window), a CPU ring gauge, and a
+five-node pipeline ledger. One action applies the enabled stages; one action
+restores what can be restored. Every row names the mechanism it uses
+(`SetPriorityClass`, `NtSetTimerResolution`, `powercfg`, `HKCU`).
+
+### Emulator
+- Detects `HD-Player.exe` and classifies BlueStacks 5 vs. MSI App Player 5, even
+  when the emulator blocks path access to the normal process APIs.
+- **Launch boosted** starts a closed emulator at `AboveNormal` before BlueStacks
+  applies its runtime protection. This is launch-time scheduling, not a bypass;
+  the button is disabled while the target is running.
+- Boosts the running emulator to `AboveNormal`. A direct `SetPriorityClass` is
+  tried first; when BlueStacks denies the handle, the injected engine sets the
+  class from inside the process on the same click.
+- **Boost priority** switches Windows to the Ultimate Performance plan so the CPU
+  holds its boost clock, arms the 2× FPS overlay, and writes the active
+  instance's high-FPS config (`max_fps=240`, high FPS on, vsync off) to
+  `bluestacks.conf` with a timestamped backup; the emulator applies the config
+  on the next start.
+- Measures and clears compiled QML caches only; application data and games are
+  preserved.
+- Inventories the installed BlueStacks kernel drivers with file version, full
+  SHA-256, and Authenticode trust state. The inventory is read-only: the stock
+  driver stays in place.
+- **Boost priority** also loads `UncapEngine.dll` through a thread message hook,
+  so it needs no process handles and works with the stock protected driver. The
+  engine forces the present interval to zero and replaces the native BlueStacks
+  FPS counter store with a jump to a code cave. The cave multiplies the measured
+  rate in `r8d` by **2** (configurable in `UncapEngine.ini`), stores the result,
+  and jumps back — BlueStacks renders `r8d`, so the displayed FPS rises and
+  falls with the emulator instead of freezing on one baseline. Re-arming
+  restores the store and reinstalls the cave with the current factor, so
+  repeated clicks never compound the multiplier. Live code is rewritten only
+  with the other threads suspended; **Restore normal** ejects the engine,
+  restores the original instructions, and returns priority and the power plan to
+  stock without unloading the module.
+- Live telemetry from the injected module: frame rate, average/p95 frame time,
+  flags, and the visual-patch state. Injected state is read from shared memory
+  because the protected process hides its module list.
+
+### System tuning
+- Queries the active power scheme, activates Ultimate Performance (duplicating
+  the hidden scheme once when needed), and restores the captured GUID.
+- Holds an `NtSetTimerResolution` request between 0.5 ms and 2.0 ms for the life
+  of the process, then releases it on request or exit.
+- Applies seven `HKCU` GameDVR / FSE / Game Bar values after recording their
+  originals, and restores them later.
+- A reversibility ledger shows what is currently held, what is backed up, and
+  where backups live.
+
+### Visual tuning
+- Ten renderer parameters compiled into a portable JSON preset.
+- Three baselines: Competitive, Cinema, Clean.
+- Export and reset actions; presets persist under `%APPDATA%\Treacky.Tols`.
+- The renderer attachment state is reported honestly. This build compiles
+  presets; the optional native renderer module is a separate deliverable.
+
+### Diagnostics
+- Runtime, CPU, memory, uptime, elevation, and machine fingerprint.
+- SHA-256 of the running binary and verification against `SHA256SUMS.txt`.
+- Read-only scan for known instrumentation processes. It warns; it does not
+  block, kill, or retaliate.
+- Session log viewer, report copy, and data-folder shortcuts.
+
+### Settings
+- Start behavior, confirmations, timer/power/registry opt-ins.
+- Data directory, elevation restart, privacy statement.
+- Developer profile and links, version and build identity.
+
+---
+
+## Screens
+
+| | |
+|---|---|
+| ![Emulator](screenshots/emulator.png) | ![System tuning](screenshots/system.png) |
+| **Emulator** — target, priority, QML cache, driver integrity | **System tuning** — power, timer, registry, reversibility |
+| ![Visual tuning](screenshots/visuals.png) | ![Diagnostics](screenshots/diagnostics.png) |
+| **Visual tuning** — preset compiler and store | **Diagnostics** — audit, integrity, instrumentation, log |
+| ![Settings](screenshots/settings.png) | |
+| **Settings** — behavior, privacy, developer profile | |
+
+---
+
+## Safety model
+
+Treacky.Tols is deliberately boring about trust:
+
+- **Stock driver only.** The app never downloads, replaces, stages, or downgrades
+  a kernel driver. Driver rows are read-only evidence.
+- **Injection is scoped.** The uncap payload is loaded only into the emulator the
+  page has detected, through a thread-scoped Windows hook, and only after an
+  explicit **Boost priority** click in an elevated session.
+- **No license server, HWID check-in, or key enforcement.** This community build
+  has no activation gate and makes no license requests.
+- **No anti-analysis behavior.** The instrumentation scan reports processes; it
+  never terminates them, hides the app, or blocks debugging.
+- **No obfuscation or packing.** The managed assembly is inspectable.
+- **No telemetry.** The app makes no outbound requests; links open only when you
+  click them.
+- **No silent persistence.** Registry and power changes are user-initiated,
+  captured first, and restorable from the same screen. Timer requests are
+  process-scoped and released on exit.
+- **No fake signatures.** Release builds are signed only with a real CA-issued
+  certificate. If no certificate is configured, the build is published as
+  explicitly unsigned.
+
+Details: [SECURITY.md](SECURITY.md).
+
+---
+
+## Requirements
+
+- Windows 10 1903+ or Windows 11, x64.
+- No .NET runtime install for the release executable; it is self-contained.
+  Building from source needs the .NET 8 SDK.
+- Administrator elevation for power-scheme changes and uncap injection.
+- BlueStacks 5 or MSI App Player 5 for emulator-specific features. The rest of
+  the console works without it.
+
+---
+
+## Install and verify
+
+1. Download `Treacky.Tols-<version>-win-x64.exe` from the release.
+2. Verify the executable against the SHA-256 in the release body:
+
+   ```powershell
+   Get-FileHash .\Treacky.Tols-0.1.3-win-x64.exe -Algorithm SHA256
+   ```
+
+   The hashes must match.
+
+3. If the release is signed, inspect the signer:
+
+   ```powershell
+   Get-AuthenticodeSignature .\Treacky.Tols-0.1.3-win-x64.exe | Format-List Status,SignerCertificate
+   ```
+
+   `Status` must be `Valid` and the subject must match the published signer.
+   Unsigned community builds report `NotSigned`; they are never described as
+   signed.
+
+4. Run `Treacky.Tols.exe`. There is no ZIP and no extraction step; the uncap
+   payload and branding are embedded and unpacked on first use.
+
+Settings, presets, and logs live in `%APPDATA%\Treacky.Tols`. Driver and registry
+backups live in `%ProgramData%\Treacky.Tols`.
+
+---
+
+## Build from source
+
+```powershell
+# From the repository root
+dotnet build Treacky.Tols.sln -c Release
+
+# Framework-dependent publish
+dotnet publish src\Treacky.Tols\Treacky.Tols.csproj -c Release -r win-x64 `
+  --self-contained false -o dist\Treacky.Tols
+```
+
+The release helper builds one self-contained executable:
+
+```powershell
+.\scripts\Build-SingleFile.ps1 -Version 0.1.3
+```
+
+Output: `dist\Treacky.Tols-0.1.3-win-x64.exe` and its `.sha256` sidecar. The
+folder + ZIP helper remains available for local review:
+
+```powershell
+.\scripts\Build-Release.ps1 -Version 0.1.3
+```
+
+The managed build ships the prebuilt
+`native\UncapEngine_SDK\payload\UncapEngine.dll`. Rebuild it after changing the
+native source:
+
+```powershell
+cd native\UncapEngine_SDK\UncapEngine_DLL
+.\build_dll.bat
+```
+
+`build_dll.bat` uses Visual Studio 2022 when `vcvars64.bat` is present and falls
+back to `g++` (WinLibs/MinGW-w64) otherwise.
+
+Signing requires `signtool.exe` and a CA-issued certificate:
+
+```powershell
+.\scripts\Sign-Release.ps1 -Path .\dist\Treacky.Tols-0.1.3-win-x64.exe `
+  -Pfx .\secrets\codesign.pfx -Password (Read-Host -AsSecureString)
+```
+
+See [docs/06-RELEASE.md](docs/06-RELEASE.md) for the full pipeline, including
+timestamping and verification.
+
+---
+
+## Tests
+
+The service harness has no external dependencies:
+
+```powershell
+dotnet run --project tests\Treacky.Tols.Tests -c Release
+```
+
+The default pass is read-only (18 checks). Add `--system` to exercise the
+reversible timer, power-plan, and registry round-trips (21 checks). The harness
+captures and restores real state, then prints `passed / failed / skipped`.
+
+UI verification uses the deterministic capture mode:
+
+```powershell
+.\Treacky.Tols.exe --capture .\artifacts\shots
+.\Treacky.Tols.exe --capture .\artifacts\shots --page system
+```
+
+Captures render the real WPF visual tree, verify the selected page before each
+save, and log `selected='<key>'`. See [docs/05-TEST-PLAN.md](docs/05-TEST-PLAN.md).
+
+---
+
+## Architecture
+
+- **.NET 8 / WPF**, self-contained single-file release, zero NuGet dependencies.
+- Custom window chrome, embedded OFL fonts, vector-only iconography.
+- Services are UI-agnostic and testable; the WPF layer binds to view models.
+- Long operations run on the thread pool; the dispatcher only receives results.
+- Settings and presets use an atomic JSON store; logs are append-only.
+- Native interop is limited to `NtSetTimerResolution` /
+  `NtQueryTimerResolution`, memory/CPU sampling, DWM attributes, limited-query
+  process probes, and `WinVerifyTrust`.
+
+Read [docs/03-ARCHITECTURE.md](docs/03-ARCHITECTURE.md) for the layer map and
+[docs/02-FEATURE-MAP.md](docs/02-FEATURE-MAP.md) for the source-to-rebuild
+feature matrix.
+
+---
+
+## Documentation
+
+| Document | Contents |
+|---|---|
+| [01 · Reverse engineering](docs/01-REVERSE-ENGINEERING.md) | Binary profile, observed behavior, safety boundaries |
+| [02 · Feature map](docs/02-FEATURE-MAP.md) | Source capability → Treacky.Tols implementation |
+| [03 · Architecture](docs/03-ARCHITECTURE.md) | Layers, services, data flow, threading |
+| [04 · Design system](docs/04-DESIGN-SYSTEM.md) | Palette, type, spacing, chrome, motion |
+| [05 · Test plan](docs/05-TEST-PLAN.md) | Harness, capture mode, manual matrix |
+| [06 · Release](docs/06-RELEASE.md) | Build, publish, checksums, signing |
+| [Changelog](CHANGELOG.md) | Release history |
+| [Contributing](CONTRIBUTING.md) | Development workflow |
+| [Security](SECURITY.md) | Trust model and reporting |
+
+---
+
+## Developer
+
+**FRHANLVLY** · FLY.PROJECT-X · `@FRHANLVLY`
+
+Social links can be configured in `src/Treacky.Tols/branding.json`.
+
+---
+
+## License
+
+MIT. Distribution is permitted under the terms of [LICENSE](LICENSE), including source and binary redistribution. Releasing the project publicly does not grant a right to use third-party trademarks or imply endorsement. The repository owner remains responsible for the exact binary, notices, and license text shipped with each release.
+
+Treacky.Tols is an independent project. It is not affiliated with BlueStacks,
+MSI, Microsoft, or any third-party optimizer vendor. BlueStacks and MSI App Player
+are trademarks of their respective owners.
